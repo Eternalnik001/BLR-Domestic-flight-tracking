@@ -124,8 +124,10 @@ Everything lives in [`tracker/config.py`](tracker/config.py):
 | `ABS_TARGET` | `{}` | Optional per-route absolute INR target |
 | `MAX_LIVE_CALLS` | `8` | Hard cap on live calls per run (protects free tier) |
 
-**Destinations** are seeded from `DESTINATIONS` on first run, then live in the `watchlist` table — edit them
-from the dashboard, not the code. The airport picker covers **53 airports across 29 states/UTs**.
+**Destinations** are seeded from `DESTINATIONS` only on a brand-new database (before the very first scan).
+After that the `watchlist` table is the single source of truth — curate it from the dashboard (add, remove,
+or **Clear all**) and your choices stick; the defaults are never re-added. The airport picker covers
+**53 airports across 29 states/UTs**.
 
 ---
 

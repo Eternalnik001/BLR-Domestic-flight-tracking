@@ -36,8 +36,11 @@ async def scan_cached(dests: list[str], months: list[int]) -> list[tuple[str, di
 def main() -> None:
     security.require_secrets("TRAVELPAYOUTS_TOKEN")  # core scan can't run without it
     storage.init_db()
-    storage.seed_watchlist_if_empty(config.ORIGIN, config.DESTINATIONS)
-    dests = storage.load_watchlist(config.ORIGIN) or config.DESTINATIONS
+    storage.seed_watchlist_if_fresh(config.ORIGIN, config.DESTINATIONS)
+    dests = storage.load_watchlist(config.ORIGIN)
+    if not dests:
+        print("[scan] watchlist is empty — add destinations in the dashboard. Nothing to scan.")
+        return
     combos_by_month = {m: config.trip_combos(m) for m in config.TRIP_MONTHS}
     prev = storage.load_latest()
 

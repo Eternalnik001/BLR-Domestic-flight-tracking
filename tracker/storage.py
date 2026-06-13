@@ -96,17 +96,19 @@ def load_watchlist(origin: str) -> list[str]:
         return [r.dest for r in rows]
 
 
-def seed_watchlist_if_empty(origin: str, dests: list[str]) -> None:
-    """Populate the watchlist with `dests` only if it has no rows for `origin`.
+def seed_watchlist_if_fresh(origin: str, dests: list[str]) -> None:
+    """Seed the watchlist from `dests` only on a brand-new database.
 
-    Lets a fresh database bootstrap from config.DESTINATIONS without ever
-    clobbering choices the frontend has since made.
+    "Brand-new" = the watchlist is empty AND no run has ever happened (history is
+    empty). This makes a fresh deploy work out of the box, but never re-adds the
+    defaults once the user has curated their list — even if they clear it to empty.
     """
     with ENGINE.begin() as conn:
-        existing = conn.execute(
+        has_wl = conn.execute(
             select(watchlist.c.dest).where(watchlist.c.origin == origin).limit(1)
         ).first()
-        if existing is not None:
+        has_history = conn.execute(select(history.c.dest).limit(1)).first()
+        if has_wl is not None or has_history is not None:
             return
         now = datetime.now(timezone.utc)
         conn.execute(

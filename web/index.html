@@ -103,6 +103,12 @@
       font-size: 16px; padding: 12px 24px; border-radius: 980px; cursor: pointer; transition: .2s; }
     .btn-primary:hover { filter: brightness(1.06); }
     .btn-primary:disabled { opacity: .4; cursor: default; }
+    .btn-ghost { border: 1px solid var(--hairline); background: var(--bg-elev); color: var(--text);
+      font: inherit; font-size: 16px; padding: 12px 20px; border-radius: 980px; cursor: pointer; transition: .2s; }
+    .btn-ghost:hover:not(:disabled) { border-color: var(--bad); color: var(--bad); }
+    .btn-ghost:disabled { opacity: .4; cursor: default; }
+    .wl-count { font-size: 14px; color: var(--text-2); margin-bottom: 12px; }
+    .wl-count b { color: var(--text); }
     .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
     .chip { display: inline-flex; align-items: center; gap: 8px; background: var(--chip);
       border-radius: 980px; padding: 7px 14px; font-size: 14px; font-weight: 500; }
@@ -167,8 +173,10 @@
       <div class="section-sub">Pick the destinations to track. Origin stays locked to Bengaluru (BLR).</div>
       <div class="wl-bar">
         <input id="search" type="search" placeholder="Search city or state — Goa, Kerala, Mumbai…" />
+        <button id="clear" class="btn-ghost" disabled>Clear all</button>
         <button id="save" class="btn-primary" disabled>Save watchlist</button>
       </div>
+      <div id="wl-count" class="wl-count"></div>
       <div id="chips" class="chips"></div>
       <div id="opts" class="opts"></div>
     </section>

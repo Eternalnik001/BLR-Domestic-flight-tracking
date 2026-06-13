@@ -122,7 +122,8 @@
 
   // ===================== WATCHLIST =====================
   let selected = new Set(), draft = new Set();
-  const search = $("search"), opts = $("opts"), chips = $("chips"), saveBtn = $("save");
+  const search = $("search"), opts = $("opts"), chips = $("chips");
+  const saveBtn = $("save"), clearBtn = $("clear"), wlCount = $("wl-count");
 
   async function loadWatchlist() {
     const { data, error } = await db.from("watchlist").select("dest")
@@ -136,10 +137,13 @@
   function renderChips() {
     const items = [...draft].map((c) => byCode[c]).filter(Boolean)
       .sort((a, b) => a.city.localeCompare(b.city));
-    chips.innerHTML = items.length
-      ? items.map((a) => `<span class="chip"><b>${a.iata}</b> ${a.city}
-          <span class="x" data-rm="${a.iata}" title="remove">×</span></span>`).join("")
-      : `<span class="section-sub">No destinations selected yet.</span>`;
+    const dirty = draft.size !== selected.size || [...draft].some((d) => !selected.has(d));
+    wlCount.innerHTML = items.length
+      ? `Tracking <b>${items.length}</b> destination${items.length > 1 ? "s" : ""}` +
+        (dirty ? ` · unsaved changes — hit <b>Save watchlist</b>` : ` · scanned every day`)
+      : `Nothing selected — pick destinations below to start tracking.`;
+    chips.innerHTML = items.map((a) => `<span class="chip"><b>${a.iata}</b> ${a.city}
+        <span class="x" data-rm="${a.iata}" title="remove">×</span></span>`).join("");
     chips.querySelectorAll("[data-rm]").forEach((el) =>
       el.onclick = () => { draft.delete(el.dataset.rm); syncDirty(); renderChips(); renderOpts(); });
   }
@@ -167,6 +171,7 @@
   function syncDirty() {
     const changed = draft.size !== selected.size || [...draft].some((d) => !selected.has(d));
     saveBtn.disabled = !changed;
+    clearBtn.disabled = draft.size === 0;
   }
 
   async function save() {
@@ -195,6 +200,7 @@
   // ---- wire up ----
   search.oninput = renderOpts;
   saveBtn.onclick = save;
+  clearBtn.onclick = () => { draft.clear(); syncDirty(); renderChips(); renderOpts(); };
   loadWatchlist();
   loadDashboard();
 })();
