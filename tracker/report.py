@@ -8,7 +8,7 @@ from __future__ import annotations
 import httpx
 from jinja2 import Template
 
-from . import config
+from . import clients, config, security
 
 RESEND_URL = "https://api.resend.com/emails"
 
@@ -139,11 +139,15 @@ def send(html: str, subject: str) -> None:
     if not (config.RESEND_API_KEY and config.EMAIL_TO):
         print("[email] RESEND_API_KEY or EMAIL_TO not set – skipping send.")
         return
-    resp = httpx.post(
-        RESEND_URL,
-        headers={"Authorization": f"Bearer {config.RESEND_API_KEY}"},
-        json={"from": config.EMAIL_FROM, "to": config.EMAIL_TO, "subject": subject, "html": html},
-        timeout=30,
-    )
-    resp.raise_for_status()
-    print(f"[email] sent to {', '.join(config.EMAIL_TO)}")
+    try:
+        resp = httpx.post(
+            RESEND_URL,
+            headers={"Authorization": f"Bearer {config.RESEND_API_KEY}"},
+            json={"from": config.EMAIL_FROM, "to": config.EMAIL_TO, "subject": subject, "html": html},
+            timeout=30,
+            verify=clients.CA_BUNDLE,
+        )
+        resp.raise_for_status()
+        print(f"[email] sent to {', '.join(config.EMAIL_TO)}")
+    except Exception as exc:  # noqa: BLE001 - a failed email shouldn't waste a good scan
+        security.safe_print(f"[email] send failed (report.html still written): {exc!r}")

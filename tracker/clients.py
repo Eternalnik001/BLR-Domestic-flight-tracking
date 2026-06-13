@@ -5,16 +5,23 @@
 """
 from __future__ import annotations
 
+import certifi
 import httpx
 
+# certifi CA bundle: makes TLS verification work on machines (e.g. macOS Python)
+# whose default trust store httpx can't find. Harmless on Linux CI.
+CA_BUNDLE = certifi.where()
+
 # ---------------------------------------------------------------------------
-# Travelpayouts – cached "price calendar" (one call returns a whole month)
+# Travelpayouts – cached "month matrix" (one call returns a whole month)
 # ---------------------------------------------------------------------------
-# NOTE: Travelpayouts has reshuffled endpoints over the years. If you get empty
-# `data`, the two most likely fixes are (a) try depart_date as "YYYY-MM-01"
-# instead of "YYYY-MM", and (b) confirm this path against the current docs:
-#   https://travelpayouts-data-api.readthedocs.io/  ->  /v1/prices/calendar
-TP_CALENDAR_URL = "https://api.travelpayouts.com/v1/prices/calendar"
+# The /v1/prices/calendar endpoint ignores the requested month and returns a
+# generic cheapest-tickets blob. /v2/prices/month-matrix is the one that returns
+# the cheapest cached fare *per departure day* for a given month. It only serves
+# ONE-WAY records (one_way=false comes back empty), so we fetch each direction
+# separately and build round trips as "split" fares in analyze.py.
+#   docs: https://support.travelpayouts.com/  ->  Data API  ->  Calendar of prices for a month
+TP_MONTH_MATRIX_URL = "https://api.travelpayouts.com/v2/prices/month-matrix"
 
 
 class Travelpayouts:
@@ -23,39 +30,41 @@ class Travelpayouts:
         self.currency = currency
         self.timeout = timeout
 
-    async def calendar(
+    async def one_way_calendar(
         self,
         client: httpx.AsyncClient,
         origin: str,
         destination: str,
         month: str,            # "YYYY-MM"
-        length: int | None = None,  # stay length in days -> round-trip prices; omit for one-way
     ) -> dict[str, float]:
-        """Return {date_str: cheapest_price} for each day of `month`.
+        """Return {depart_date: cheapest_one_way_price} for each cached day of `month`.
 
-        - length=None  -> ONE-WAY cheapest per departure day.
-        - length=N     -> ROUND-TRIP cheapest per departure day with an N-day stay.
+        The cache is sparse and only reaches a few months out, so far-future
+        months (and thin routes) legitimately come back empty.
         """
         params = {
             "origin": origin,
             "destination": destination,
-            "depart_date": month,           # YYYY-MM (see note above if empty)
-            "calendar_type": "departure_date",
+            "month": f"{month}-01",        # endpoint wants the first day of the month
             "currency": self.currency,
+            "show_to_affiliates": "true",
+            "one_way": "true",
             "token": self.token,
         }
-        if length is not None:
-            params["length"] = length
-
-        resp = await client.get(TP_CALENDAR_URL, params=params, timeout=self.timeout)
+        resp = await client.get(TP_MONTH_MATRIX_URL, params=params, timeout=self.timeout)
         resp.raise_for_status()
         payload = resp.json()
 
         out: dict[str, float] = {}
-        for day, info in (payload.get("data") or {}).items():
-            price = info.get("price") if isinstance(info, dict) else None
-            if price is not None:
-                out[day] = float(price)
+        for rec in payload.get("data") or []:
+            day = rec.get("depart_date")
+            price = rec.get("value")
+            if not day or price is None:
+                continue
+            price = float(price)
+            # Keep the cheapest record per day (the API usually pre-dedupes, but be safe).
+            if day not in out or price < out[day]:
+                out[day] = price
         return out
 
 
@@ -99,7 +108,7 @@ class SerpApi:
         else:
             params["type"] = 2            # one way
 
-        resp = httpx.get(SERPAPI_URL, params=params, timeout=timeout)
+        resp = httpx.get(SERPAPI_URL, params=params, timeout=timeout, verify=CA_BUNDLE)
         resp.raise_for_status()
         data = resp.json()
 

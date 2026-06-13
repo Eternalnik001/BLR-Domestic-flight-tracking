@@ -4,6 +4,27 @@ from __future__ import annotations
 import calendar
 import os
 from datetime import date
+from pathlib import Path
+
+
+def _load_dotenv() -> None:
+    """Load a local .env (project root) into os.environ for local runs.
+
+    Real environment variables (e.g. GitHub Actions secrets) always win — we
+    only fill in keys that aren't already set.
+    """
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Trip definition

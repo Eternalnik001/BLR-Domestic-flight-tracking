@@ -37,11 +37,30 @@ strategy per date, and emails an HTML matrix. Runs free on **GitHub Actions** (P
    | `EMAIL_TO` | `you@example.com,team@example.com` |
    | `EMAIL_FROM` | `Flight Tracker <onboarding@resend.dev>` |
 
-4. Edit `tracker/config.py`: set your `DESTINATIONS`, `DROP_PCT_TRIGGER`, optional
-   `ABS_TARGET` per route, and `MAX_LIVE_CALLS`.
+4. Edit `tracker/config.py`: set `DROP_PCT_TRIGGER`, optional `ABS_TARGET` per route, and
+   `MAX_LIVE_CALLS`. The list of destinations is seeded from `DESTINATIONS` on the first run
+   but then lives in the `watchlist` table — edit it from the frontend (below).
 5. Done. It runs daily (see the cron in `.github/workflows/track.yml`) and can be triggered
    manually from the **Actions** tab. Even before email is configured, the run uploads
    `report.html` as a downloadable artifact.
+
+## Frontend (watchlist + dashboard)
+
+A static page in [`web/`](web/) lets you pick which destinations to track (origin locked to
+BLR) and shows the cheapest fare per route. It talks to Supabase directly with the **anon
+public key** — safe to expose, since [`web/supabase_setup.sql`](web/supabase_setup.sql)
+restricts it to reading prices and editing the watchlist.
+
+1. After the tracker's first run (so the tables exist), run `web/supabase_setup.sql` once in
+   the Supabase **SQL Editor**.
+2. In `web/config.js` paste your **Project URL** and **anon public** key
+   (Supabase → Project Settings → API).
+3. Publish: repo **Settings → Pages → Source = GitHub Actions**. The `deploy-frontend`
+   workflow serves the `web/` folder on every push. Or just open `web/index.html` locally.
+
+The watchlist drives the daily job: pick routes in the UI → they're saved to Supabase → the
+next scan uses them. The dashboard reads the same `latest` table the email is built from, so
+November stays empty until the cache warms (the page says so rather than looking broken).
 
 > **GitHub Actions needs Postgres, not SQLite.** The runner's disk is wiped each run, so
 > SQLite would forget yesterday's prices and change-detection would never fire. Set
@@ -59,11 +78,12 @@ python -m tracker.main          # writes report.html and (if configured) sends t
 
 ## Verify / tune
 
-- **Travelpayouts endpoint.** Cached prices come from Aviasales search history and can be
-  sparse on thin routes — expect some routes to return little data. If a route comes back
-  empty, check `tracker/clients.py`: try `depart_date` as `YYYY-MM-01` instead of `YYYY-MM`,
-  and confirm the `/v1/prices/calendar` path and the `length` (stay-length) parameter against
-  the current docs at <https://travelpayouts-data-api.readthedocs.io/>.
+- **Travelpayouts endpoint.** Cached prices come from `/v2/prices/month-matrix` (the
+  `/v1/prices/calendar` path ignores the month and returns a generic blob — don't use it).
+  It only serves **one-way** records, so round trips are built as "split" fares (outbound +
+  return leg) in `tracker/analyze.py`. The cache is sparse on thin routes and only reaches a
+  few months out: **a far-future month like November returns nothing until ~Aug–Sep**, when
+  real searches start filling it. Empty routes are expected, not a bug.
 - **Round-trip vs split.** On Indian-domestic LCCs these are usually equal; the tracker
   flags the cases where they're not.
 - **SerpApi budget.** Daily × `MAX_LIVE_CALLS=8` ≈ 240/month — at or above the free tier, so

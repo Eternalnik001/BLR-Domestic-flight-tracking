@@ -6,32 +6,39 @@ from datetime import datetime, timezone
 
 import httpx
 
-from . import analyze, clients, config, report, storage
+from . import analyze, clients, config, report, security, storage
 
 
-async def scan_cached() -> list[tuple[str, dict, dict, dict] | Exception]:
-    """Fetch all three calendars for every destination, concurrently."""
+async def scan_cached(dests: list[str]) -> list[tuple[str, dict, dict, dict] | Exception]:
+    """Fetch both one-way calendars (outbound + return) for every destination, concurrently.
+
+    The cache only serves one-way records, so a cached round-trip price isn't
+    available; round trips are built as "split" fares in analyze and confirmed
+    live via SerpApi for the gated candidates.
+    """
     tp = clients.Travelpayouts(config.TRAVELPAYOUTS_TOKEN, config.CURRENCY, config.REQUEST_TIMEOUT)
     month = config.trip_month_str()
     sem = asyncio.Semaphore(config.MAX_CONCURRENCY)
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=clients.CA_BUNDLE) as client:
         async def for_dest(dest: str):
             async with sem:
-                out_ow = await tp.calendar(client, config.ORIGIN, dest, month)
-                ret_ow = await tp.calendar(client, dest, config.ORIGIN, month)
-                rt = await tp.calendar(client, config.ORIGIN, dest, month, length=config.NIGHTS)
-                return dest, out_ow, ret_ow, rt
+                out_ow = await tp.one_way_calendar(client, config.ORIGIN, dest, month)
+                ret_ow = await tp.one_way_calendar(client, dest, config.ORIGIN, month)
+                return dest, out_ow, ret_ow, {}  # no cached round-trip; see docstring
 
-        return await asyncio.gather(*(for_dest(d) for d in config.DESTINATIONS), return_exceptions=True)
+        return await asyncio.gather(*(for_dest(d) for d in dests), return_exceptions=True)
 
 
 def main() -> None:
+    security.require_secrets("TRAVELPAYOUTS_TOKEN")  # core scan can't run without it
     storage.init_db()
+    storage.seed_watchlist_if_empty(config.ORIGIN, config.DESTINATIONS)
+    dests = storage.load_watchlist(config.ORIGIN) or config.DESTINATIONS
     combos = config.trip_combos()
     prev = storage.load_latest()
 
-    results = asyncio.run(scan_cached())
+    results = asyncio.run(scan_cached(dests))
 
     matrices: dict[str, list[dict]] = {}
     all_points: dict[tuple[str, str, str], float] = {}
@@ -39,7 +46,7 @@ def main() -> None:
 
     for res in results:
         if isinstance(res, Exception):
-            print(f"[scan] route failed: {res!r}")
+            security.safe_print(f"[scan] route failed: {res!r}")
             continue
         dest, out_ow, ret_ow, rt = res
         rows = analyze.build_rows(out_ow, ret_ow, rt, combos, prev, dest)
@@ -61,7 +68,7 @@ def main() -> None:
                 row["live"] = serp.price(config.ORIGIN, dest, row["depart"], row["return"])
                 live_done += 1
             except Exception as exc:  # noqa: BLE001 - one bad live call shouldn't kill the run
-                print(f"[live] {dest} {row['depart']} failed: {exc!r}")
+                security.safe_print(f"[live] {dest} {row['depart']} failed: {exc!r}")
 
     storage.save_snapshot(all_points)
 

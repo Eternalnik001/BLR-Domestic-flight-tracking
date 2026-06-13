@@ -1,0 +1,4 @@
+#!/bin/sh
+# Block commits that contain secrets. Enable once with:
+#   git config core.hooksPath .githooks
+exec python3 scripts/check_secrets.py

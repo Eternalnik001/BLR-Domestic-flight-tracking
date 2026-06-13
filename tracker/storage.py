@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Float,
@@ -48,6 +49,17 @@ history = Table(
     Column("run_at", DateTime),
 )
 
+# Routes the daily job should scan. The frontend writes here; the job reads it.
+# Origin is always BLR for now but stored explicitly so it's easy to generalise.
+watchlist = Table(
+    "watchlist",
+    _metadata,
+    Column("origin", String, primary_key=True),
+    Column("dest", String, primary_key=True),
+    Column("enabled", Boolean, nullable=False, default=True),
+    Column("added_at", DateTime),
+)
+
 
 def _engine():
     url = config.DATABASE_URL
@@ -71,6 +83,36 @@ def load_latest() -> dict[tuple[str, str, str], float]:
     with ENGINE.connect() as conn:
         rows = conn.execute(select(latest.c.dest, latest.c.depart, latest.c.fare_type, latest.c.price))
         return {(r.dest, r.depart, r.fare_type): r.price for r in rows if r.price is not None}
+
+
+def load_watchlist(origin: str) -> list[str]:
+    """Enabled destinations for `origin`, in stable order. Empty if none set."""
+    with ENGINE.connect() as conn:
+        rows = conn.execute(
+            select(watchlist.c.dest)
+            .where(watchlist.c.origin == origin, watchlist.c.enabled.is_(True))
+            .order_by(watchlist.c.dest)
+        )
+        return [r.dest for r in rows]
+
+
+def seed_watchlist_if_empty(origin: str, dests: list[str]) -> None:
+    """Populate the watchlist with `dests` only if it has no rows for `origin`.
+
+    Lets a fresh database bootstrap from config.DESTINATIONS without ever
+    clobbering choices the frontend has since made.
+    """
+    with ENGINE.begin() as conn:
+        existing = conn.execute(
+            select(watchlist.c.dest).where(watchlist.c.origin == origin).limit(1)
+        ).first()
+        if existing is not None:
+            return
+        now = datetime.now(timezone.utc)
+        conn.execute(
+            insert(watchlist),
+            [{"origin": origin, "dest": d, "enabled": True, "added_at": now} for d in dests],
+        )
 
 
 def save_snapshot(points: dict[tuple[str, str, str], float]) -> None:
