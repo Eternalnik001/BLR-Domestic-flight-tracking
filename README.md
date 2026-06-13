@@ -4,7 +4,7 @@
 Pick destinations, and every morning it scans the cheapest 3-night / 4-day round trips across a whole
 month, stores the history, flags real price drops, and surfaces it all on a live dashboard + email.
 
-🔗 **Live:** https://eternalnik001.github.io/flight-tracking/
+🔗 **Live:** https://eternalnik001.github.io/BLR-Domestic-flight-tracking/
 💸 **Running cost:** ₹0 (entirely on free tiers)
 ⏱️ **Built end-to-end in under 5 hours** — vibe-coded with Claude Code.
 
